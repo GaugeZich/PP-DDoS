@@ -9,7 +9,7 @@ const AppDatasource = new DataSource({
   username: envs.DB_USER,
   password: envs.DB_PASS,
   database: envs.DATABASE,
-  synchronize: envs.NODE_ENV !== 'production',
+  synchronize: false,
   logging: false,
   entities: [userEntity],
 });
