@@ -5,8 +5,9 @@ import pkg from 'signale';
 const { Signale } = pkg;
 
 import http from 'http';
+import { Server } from "socket.io"
+
 const server = http.createServer(app);
-const { Server } = require("socket.io")
 const io = new Server(server)
 
 const main = async () => {
@@ -19,7 +20,7 @@ const main = async () => {
     logger.success('Connected to database');
 
     // Solo después iniciar el servidor
-    app.listen(port, () => {
+    server.listen(port, () => {
       logger.success(`Server running on port ${port}`);
     });
 
