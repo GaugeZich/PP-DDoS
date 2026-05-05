@@ -20,7 +20,7 @@ const CONFIG = {
   
   // Patrones que indican tráfico malicioso
   MALICIOUS_PATTERNS: [
-    /sql|union|select|drop|insert|delete|update|exec|script/gi,
+    /sql|union|select|drop|insert|delete|update|exec|script|attacker/gi,
     /<script|javascript:|onerror|onload|onclick/gi,
     /\.\.|\/\/|\.\.\/|%2e%2e/gi,
     /passwd|shadow|etc\/|admin|root|system32/gi,
