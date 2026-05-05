@@ -44,7 +44,7 @@ El servidor quedará corriendo en 👉 http://localhost:3000
 # 💻 Resultados
 
 ## Terminal del servidor
-
+![image alt](https://github.com/GaugeZich/PP-DDoS/blob/74ed02f8f3733856c0c56a373776361de0968de1/Terminal%20bloqueo.png)
 
 ## Terminal de Test
 #### Resultado esperado:
