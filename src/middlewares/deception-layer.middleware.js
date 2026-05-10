@@ -150,24 +150,22 @@ export const deceptionLayerMiddleware = (req, res, next) => {
     });
   }
   
-  // Caso 1: Patrón malicioso detectado
-  if (isSuspicious) {
-    const record = recordAttackAttempt(clientIP, req);
-    
-    // Si está shunned, devolver honey response
-    if (record.shunned) {
-      return res.status(200).json({
-        success: true,
-        message: 'Solicitud procesada correctamente',
-        data: [],
-        requestId: Math.random().toString(36).substring(7),
-      });
-    }
-    
-    // Si no está aún shunned, continuar pero monitorear
-    logger.warn(`⚠️ Solicitud sospechosa pasada al sistema: ${clientIP}`);
-  }
   
+ // Caso 1: Patrón malicioso detectado
+if (isSuspicious) {
+
+  const record = recordAttackAttempt(clientIP, req);
+
+  logger.warn(`⚠️ ATAQUE BLOQUEADO AUTOMÁTICAMENTE: ${clientIP}`);
+
+  // RESPUESTA FALSA (TARPITTING)
+  return res.status(200).json({
+    success: true,
+    message: 'Solicitud procesada correctamente',
+    data: [],
+    requestId: Math.random().toString(36).substring(7),
+  });
+}
   // Caso 2: Acceso a honey-endpoint (sin ser detectado aún como malicioso)
   if (isHoney && !isSuspicious) {
     const record = recordAttackAttempt(clientIP, req);
@@ -193,6 +191,12 @@ export const getSecurityStats = (req, res) => {
     trackedIPs: ipTracker.size,
     totalAttempts: Array.from(ipTracker.values()).reduce((sum, record) => sum + record.count, 0),
     shunnedIPs: Array.from(ipTracker.values()).filter(record => record.shunned).length,
+
+    // Compatibilidad con tests
+    tracked: ipTracker.size,
+    attempts: Array.from(ipTracker.values()).reduce((sum, record) => sum + record.count, 0),
+    blocked: Array.from(ipTracker.values()).filter(record => record.shunned).length,
+
     details: Array.from(ipTracker.entries()).map(([ip, data]) => ({
       ip,
       attempts: data.count,

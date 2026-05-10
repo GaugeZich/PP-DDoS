@@ -14,6 +14,8 @@ const register = async (req = request, res = response) => {
   const finalUser = {username, password: hashPassword}
 
   try {
+    console.log("🚨 ENTRÓ AL CONTROLADOR REAL");
+
     const newUser = await repo.save(finalUser);
     
     res.status(201).json({ok: true, result: newUser, msg: 'Created'})

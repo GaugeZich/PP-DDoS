@@ -29,5 +29,5 @@ export const envs = {
   DB_PASS: value.DB_PASS,
   DB_HOST: value.DB_HOST,
   NODE_ENV: value.NODE_ENV,
-  JWT_SECRET: value.NODE_ENV,
+  JWT_SECRET: value.JWT_SECRET,
 };
