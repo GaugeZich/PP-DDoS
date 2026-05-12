@@ -1,32 +1,19 @@
-
-
 import pkg from 'signale';
 const { Signale } = pkg;
 
 const logger = new Signale({ scope: 'Deception Layer' });
 
-// Almacenamiento en memoria de IPs maliciosas y sus contadores
 const ipTracker = new Map();
 
-/**
- * Configuración de umbrales de detección y mitigación
- */
 const CONFIG = {
-  // Número de solicitudes sospechosas antes de aplicar shunning
   ATTACK_THRESHOLD: 5,
-  
-  // Tiempo en milisegundos para limpiar registros de IPs (24 horas)
   CLEANUP_INTERVAL: 24 * 60 * 60 * 1000,
-  
-  // Patrones que indican tráfico malicioso
   MALICIOUS_PATTERNS: [
-    /sql|union|select|drop|insert|delete|update|exec|script|attacker/gi,
-    /<script|javascript:|onerror|onload|onclick/gi,
-    /\.\.|\/\/|\.\.\/|%2e%2e/gi,
-    /passwd|shadow|etc\/|admin|root|system32/gi,
-  ],
-  
-  // Rutas que se consideran "honey-endpoints" (señuelos)
+  /sql|union|select|drop|insert|delete|update|exec|script|attacker|malicious/gi,
+  /<script|javascript:|onerror|onload|onclick/gi,
+  /\.\.|\/\/|\.\.\/|%2e%2e/gi,
+  /passwd|shadow|etc\/|admin|root|system32/gi,
+],
   HONEY_ENDPOINTS: [
     '/api/admin',
     '/api/super-secret',
@@ -35,11 +22,14 @@ const CONFIG = {
     '/backup',
     '/config',
   ],
+  WHITELIST_PATHS: [
+    '/user',
+    '/auth/login',
+    '/auth/register',
+  ],
+  BOT_UA_PATTERNS: /curl|wget|python-requests|python|go-http-client|java\/|nikto|sqlmap|nmap|masscan|zgrab|dirbuster|gobuster|wfuzz|hydra|medusa|burpsuite|scanner|bot|spider|crawl/gi,
 };
 
-/**
- * Limpiar registros antiguos periódicamente
- */
 const cleanupOldRecords = () => {
   setInterval(() => {
     const now = Date.now();
@@ -52,51 +42,36 @@ const cleanupOldRecords = () => {
   }, CONFIG.CLEANUP_INTERVAL);
 };
 
-// Iniciar limpieza automática
 cleanupOldRecords();
 
-/**
- * Obtener la IP real del cliente (considerando proxies)
- */
 const getClientIP = (req) => {
   return (
     req.headers['x-forwarded-for']?.split(',')[0].trim() ||
     req.headers['x-real-ip'] ||
-    req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
     'unknown'
   );
 };
 
-/**
- * Analizar si la solicitud contiene patrones maliciosos
- */
 const detectMaliciousPattern = (req) => {
   const url = req.originalUrl || '';
   const body = JSON.stringify(req.body || {});
   const headers = JSON.stringify(req.headers || {});
-  
   const fullPayload = `${req.method} ${url} ${body} ${headers}`;
-  
-  for (const pattern of CONFIG.MALICIOUS_PATTERNS) {
-    if (pattern.test(fullPayload)) {
-      return true;
-    }
-  }
-  
-  return false;
+
+  return CONFIG.MALICIOUS_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(fullPayload);
+  });
 };
 
-/**
- * Verificar si la ruta es un honey-endpoint (señuelo)
- */
-const isHoneyEndpoint = (path) => {
-  return CONFIG.HONEY_ENDPOINTS.some(endpoint => path.includes(endpoint));
-};
+const isHoneyEndpoint = (path) =>
+  CONFIG.HONEY_ENDPOINTS.some((endpoint) => path.includes(endpoint));
 
-/**
- * Registrar intento de ataque
- */
+const isWhitelistedPath = (path) =>
+  CONFIG.WHITELIST_PATHS.some((p) => path.includes(p));
+
 const recordAttackAttempt = (ip, req) => {
   if (!ipTracker.has(ip)) {
     ipTracker.set(ip, {
@@ -107,7 +82,7 @@ const recordAttackAttempt = (ip, req) => {
       shunned: false,
     });
   }
-  
+
   const record = ipTracker.get(ip);
   record.count++;
   record.lastSeen = Date.now();
@@ -117,86 +92,65 @@ const recordAttackAttempt = (ip, req) => {
     path: req.originalUrl,
     userAgent: req.headers['user-agent'],
   });
-  
-  logger.warn(`⚠️ Intento de ataque detectado - IP: ${ip} (${record.count}/${CONFIG.ATTACK_THRESHOLD})`);
-  
-  // Si alcanza el umbral, aplicar shunning
+
+  logger.warn(`⚠️  Intento detectado - IP: ${ip} (${record.count}/${CONFIG.ATTACK_THRESHOLD})`);
+
   if (record.count >= CONFIG.ATTACK_THRESHOLD && !record.shunned) {
     record.shunned = true;
     logger.error(`🚫 SHUNNING APLICADO - IP bloqueada: ${ip}`);
   }
-  
+
   return record;
 };
 
-/**
- * Middleware principal de Deception Layer
- */
-export const deceptionLayerMiddleware = (req, res, next) => {
-  const clientIP = getClientIP(req);
-  const isSuspicious = detectMaliciousPattern(req);
-  const isHoney = isHoneyEndpoint(req.path);
-  
-  // Verificar si la IP está ya bloqueada (shunned)
-  if (ipTracker.has(clientIP) && ipTracker.get(clientIP).shunned) {
-    logger.error(`🚫 IP BLOQUEADA INTENTANDO ACCEDER: ${clientIP}`);
-    
-    // Devolver respuesta simulada de éxito
-    return res.status(200).json({
-      success: true,
-      message: 'Solicitud procesada correctamente',
-      data: [],
-      requestId: Math.random().toString(36).substring(7),
-    });
-  }
-  
-  
- // Caso 1: Patrón malicioso detectado
-if (isSuspicious) {
-
-  const record = recordAttackAttempt(clientIP, req);
-
-  logger.warn(`⚠️ ATAQUE BLOQUEADO AUTOMÁTICAMENTE: ${clientIP}`);
-
-  // RESPUESTA FALSA (TARPITTING)
-  return res.status(200).json({
+const fakeOkResponse = (res) =>
+  res.status(200).json({
     success: true,
     message: 'Solicitud procesada correctamente',
     data: [],
     requestId: Math.random().toString(36).substring(7),
   });
-}
-  // Caso 2: Acceso a honey-endpoint (sin ser detectado aún como malicioso)
-  if (isHoney && !isSuspicious) {
-    const record = recordAttackAttempt(clientIP, req);
-    
-    // Devolver respuesta simulada
-    return res.status(200).json({
-      success: true,
-      message: 'Solicitud procesada correctamente',
-      data: [],
-      requestId: Math.random().toString(36).substring(7),
-    });
+
+// ─── Middleware principal ────────────────────────────────────────────────────
+
+export const deceptionLayerMiddleware = (req, res, next) => {
+  const clientIP = getClientIP(req);
+  const isSuspicious = detectMaliciousPattern(req);
+  const isHoney = isHoneyEndpoint(req.path);
+
+  // 1. Payload malicioso → shunnear y bloquear siempre, en cualquier ruta
+  if (isSuspicious) {
+    recordAttackAttempt(clientIP, req);
+    logger.warn(`🚨 ATAQUE DETECTADO - tarpitting: ${clientIP}`);
+    return fakeOkResponse(res);
   }
-  
-  // Caso 3: Solicitud legítima - pasar al siguiente middleware
+
+  // 2. Honey-endpoint
+  if (isHoney) {
+    recordAttackAttempt(clientIP, req);
+    logger.warn(`🍯 HONEY-ENDPOINT - tarpitting: ${clientIP}`);
+    return fakeOkResponse(res);
+  }
+
+  // 3. IP bloqueada PERO payload limpio → dejar pasar
+  if (ipTracker.has(clientIP) && ipTracker.get(clientIP).shunned) {
+    logger.warn(`⚠️ IP shunned con payload limpio - permitiendo: ${clientIP}`);
+    return next();
+  }
+
+  // 4. Solicitud legítima
   next();
 };
+// ─── Admin endpoints ─────────────────────────────────────────────────────────
 
-/**
- * Middleware para obtener estadísticas de seguridad (admin only)
- */
 export const getSecurityStats = (req, res) => {
   const stats = {
     trackedIPs: ipTracker.size,
-    totalAttempts: Array.from(ipTracker.values()).reduce((sum, record) => sum + record.count, 0),
-    shunnedIPs: Array.from(ipTracker.values()).filter(record => record.shunned).length,
-
-    // Compatibilidad con tests
+    totalAttempts: Array.from(ipTracker.values()).reduce((sum, r) => sum + r.count, 0),
+    shunnedIPs: Array.from(ipTracker.values()).filter((r) => r.shunned).length,
     tracked: ipTracker.size,
-    attempts: Array.from(ipTracker.values()).reduce((sum, record) => sum + record.count, 0),
-    blocked: Array.from(ipTracker.values()).filter(record => record.shunned).length,
-
+    attempts: Array.from(ipTracker.values()).reduce((sum, r) => sum + r.count, 0),
+    blocked: Array.from(ipTracker.values()).filter((r) => r.shunned).length,
     details: Array.from(ipTracker.entries()).map(([ip, data]) => ({
       ip,
       attempts: data.count,
@@ -206,16 +160,13 @@ export const getSecurityStats = (req, res) => {
       recentAttempts: data.attempts.slice(-5),
     })),
   };
-  
+
   res.json(stats);
 };
 
-/**
- * Limpiar registro de una IP específica (admin only)
- */
 export const clearIPRecord = (req, res) => {
   const { ip } = req.params;
-  
+
   if (ipTracker.has(ip)) {
     ipTracker.delete(ip);
     logger.info(`Registro de IP limpiado manualmente: ${ip}`);
